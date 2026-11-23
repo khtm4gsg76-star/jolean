@@ -33,4 +33,4 @@ RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["/bin/sh", "-c", "exec uvicorn asgi:application --host 0.0.0.0 --port ${PORT:-8080} --proxy-headers --ws wsproto --timeout-keep-alive 75 --log-level info"]
+CMD ["python", "railway_start.py"]
