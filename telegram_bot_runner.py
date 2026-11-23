@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""
+مزاجي - مشغّل بوت تليجرام
+طُوِّر بواسطة: @zzmmkj
+"""
+
+import sys
+import os
+import logging
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "👋 مرحباً! أنا بوت يعمل على مزاجي𝚃\n\n"
+        "الأوامر المتاحة:\n"
+        "/start - عرض هذه الرسالة\n"
+        "/help - الحصول على المساعدة\n"
+        "/info - معلومات البوت\n\n"
+        "🛠 طُوِّر بواسطة: @zzmmkj"
+    )
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "📚 المساعدة:\n\n"
+        "هذا البوت يعمل بشكل مستمر على خادم مزاجي\n"
+        "للاشتراك أو الاستفسار: @zzmmkj"
+    )
+
+async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "ℹ️ معلومات البوت:\n\n"
+        "🤖 الخدمة: مزاجي\n"
+        "✅ الحالة: نشط ومستمر\n"
+        "🛠 المطور: @zzmmkj"
+    )
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_message = update.message.text
+    await update.message.reply_text(
+        f"📨 تم استقبال رسالتك:\n\n{user_message}\n\n"
+        "شكراً لاستخدامك مزاجي!\n"
+        "🛠 @zzmmkj"
+    )
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+
+def run_bot(token: str, bot_name: str) -> None:
+    try:
+        print("\n" + "═"*60)
+        print(f" 🤖 مزاجي - جاري تشغيل البوت: {bot_name}")
+        print(" 🚀 يتم الآن الاتصال بخوادم تليجرام...")
+        print("═"*60 + "\n")
+        application = Application.builder().token(token).build()
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("info", info_command))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_error_handler(error_handler)
+        print(f" ✅ البوت {bot_name} جاهز الآن على مزاجي!")
+        print(" 📡 الحالة: نشط وينتظر الرسائل...\n")
+        application.run_polling()
+    except Exception as e:
+        logger.error(f"❌ خطأ في تشغيل البوت {bot_name}: {str(e)}")
+
+if __name__ == "__main__":
+    token = os.environ.get("BOT_TOKEN", "").strip() or (sys.argv[1] if len(sys.argv) > 1 else "")
+    if not token:
+        print("❌ BOT_TOKEN غير مضبوط. أضفه إلى متغيرات البيئة.")
+        sys.exit(2)
+    bot_name = sys.argv[2] if len(sys.argv) > 2 else "mazagi_host_bot"
+    run_bot(token, bot_name)

@@ -1,0 +1,7 @@
+# Optional: wildcard website hosting. Configure wildcard DNS (*.sites.example.com)
+# and a matching TLS certificate with your DNS/hosting provider first.
+PUBLIC_SITE_DOMAIN=sites.example.com
+PUBLIC_SITE_SCHEME=https
+
+# Optional: canonical public dashboard URL, useful behind a reverse proxy.
+PUBLIC_BASE_URL=https://panel.example.com
