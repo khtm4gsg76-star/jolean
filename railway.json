@@ -1,6 +1,34 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
+  },
   "deploy": {
-    "startCommand": "python railway_start.py"
+    "startCommand": "python railway_start.py",
+    "healthcheckPath": "/healthz",
+    "healthcheckTimeout": 120,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  },
+  "environments": {
+    "production": {
+      "deploy": {
+        "startCommand": "python railway_start.py",
+        "healthcheckPath": "/healthz",
+        "healthcheckTimeout": 120,
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 10
+      }
+    },
+    "pr": {
+      "deploy": {
+        "startCommand": "python railway_start.py",
+        "healthcheckPath": "/healthz",
+        "healthcheckTimeout": 120,
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 10
+      }
+    }
   }
 }

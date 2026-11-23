@@ -23,6 +23,10 @@ COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+# Intercept the legacy direct `uvicorn ... --port ${PORT:-8080}` form if a
+# dashboard Start Command override is still present. Normal commands pass through.
+COPY railway_uvicorn_compat.py /usr/local/bin/uvicorn
+RUN chmod 755 /usr/local/bin/uvicorn
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin mazagi \
     && mkdir -p /data \
     && chown mazagi:mazagi /data \

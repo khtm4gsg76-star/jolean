@@ -7,15 +7,10 @@ The platform can prepare common dependencies and launch supported projects, but 
 Public websites support ZIP and TAR-family uploads (TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ), safe extraction, common Python/Node/PHP web stacks, static build outputs, and WebSocket proxying. Optional wildcard site domains are configured with `PUBLIC_SITE_DOMAIN`; wildcard DNS and TLS certificates must be configured with the hosting provider. Arbitrary languages or frameworks that require unavailable runtimes/system services are not automatically supported.
 
 
-## Railway PORT startup fix
+## Railway PORT startup fix (automatic)
 
-The project uses `railway_start.py` to read the injected `PORT` environment variable directly in Python. Do not put `${PORT:-8080}` in Railway's Start Command field. The correct command is:
+No manual Start Command entry is required. `railway.json` selects the Dockerfile and `python railway_start.py` for the base deployment plus the `production` and `pr` environments. The launcher reads Railway's injected `PORT` as an integer.
 
-```bash
-python railway_start.py
-```
+For a service that still has a stale dashboard override invoking `uvicorn ... --port ${PORT:-8080}` without a shell, the Docker image also installs a compatibility shim at `/usr/local/bin/uvicorn`. It replaces only unexpanded PORT expressions with the numeric environment value. If a legacy command bypasses Docker's entrypoint, the shim re-enters `docker-entrypoint.sh` to prepare `/data` and run as the unprivileged `mazagi` account.
 
-If a manual Start Command override exists in **Settings → Deploy → Start Command**, change it to `python railway_start.py` or clear the override so Railway can use `railway.json`/`Procfile`. Save and redeploy. Do not set `PORT` manually; let Railway inject it.
-
-
-The launcher also detects when a Docker Start Command override bypasses the image entrypoint. In that case it re-enters `docker-entrypoint.sh` so `/data` permissions are prepared and the app runs as the unprivileged `mazagi` user.
+**Important:** Railway must build a new image from this updated source. Restarting an old deployment or redeploying the same old commit does not include the shim. For a GitHub source, replace the repository files with this release and push the update to the branch connected to the `web` service. No manual Start Command or PORT variable change is required.
