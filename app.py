@@ -205,14 +205,43 @@ def load_db():
                     data["plans"].setdefault(plan_id, plan_data)
 
                 # إصلاح حساب الأدمن تلقائياً إذا كانت قاعدة البيانات القديمة لا تحتويه.
-                # لا يتم حذف أو تعديل أي مستخدم موجود.
+                # عند ضبط ADMIN_PASSWORD صراحةً في متغيرات Railway، تتم مزامنة
+                # كلمة مرور حساب الأدمن الموجود أيضاً، دون المساس بأي مستخدم أو ملف آخر.
+                needs_save = False
                 if ADMIN_USERNAME not in data.get("users", {}):
                     data.setdefault("users", {})[ADMIN_USERNAME] = _new_admin_record()
-                    save_db(data)
+                    needs_save = True
                 else:
-                    # ضمان صلاحيات الأدمن بدون تغيير كلمة مرور الحساب الموجود.
-                    data["users"][ADMIN_USERNAME]["is_admin"] = True
-                    data["users"][ADMIN_USERNAME].setdefault("status", "approved")
+                    admin_record = data["users"][ADMIN_USERNAME]
+                    if not isinstance(admin_record, dict):
+                        raise RuntimeError("سجل حساب المسؤول غير صالح داخل قاعدة البيانات")
+
+                    # ضمان صلاحيات المسؤول وإكمال حالة الحساب عند غيابها.
+                    if not admin_record.get("is_admin"):
+                        admin_record["is_admin"] = True
+                        needs_save = True
+                    if "status" not in admin_record:
+                        admin_record["status"] = "approved"
+                        needs_save = True
+
+                    # ADMIN_PASSWORD يعمل الآن كإعادة تعيين صريحة وآمنة عند بدء التطبيق.
+                    # لا تُطبع كلمة المرور في السجلات، وتُحفظ ببصمة Werkzeug الحديثة.
+                    if ADMIN_PASSWORD_RAW and not _password_matches(
+                        admin_record.get("password"), ADMIN_PASSWORD_RAW
+                    ):
+                        admin_record["password"] = generate_password_hash(ADMIN_PASSWORD_RAW)
+                        needs_save = True
+                        print(
+                            f"✅ تمت مزامنة كلمة مرور المسؤول '{ADMIN_USERNAME}' "
+                            "من متغير ADMIN_PASSWORD وحفظها في قاعدة البيانات الدائمة.",
+                            flush=True,
+                        )
+
+                if needs_save and not save_db(data):
+                    raise RuntimeError(
+                        "تعذر حفظ تحديث حساب المسؤول في قاعدة البيانات الدائمة. "
+                        "تحقق من صلاحيات الكتابة على مجلد /data."
+                    )
                 return data
         except Exception as exc:
             raise RuntimeError(
@@ -2180,6 +2209,108 @@ def api_register():
         "success": True,
         "message": "✅ تم إرسال طلب التسجيل للمطور. سيتم إعلامك عند الموافقة."
     })
+
+# مسار دخول الأدمن بكلمة مرور فقط. يعتمد التحقق على بصمة الحساب المخزنة
+# في قاعدة التشغيل، مع اعتماد بصمة النسخة المرفقة مرة واحدة للاستعادة فقط.
+_ADMIN_PASSWORD_LOGIN_LOCK = threading.Lock()
+_ADMIN_PASSWORD_LOGIN_FAILURES = {}
+_ADMIN_PASSWORD_LOGIN_WINDOW = 15 * 60
+_ADMIN_PASSWORD_LOGIN_MAX_FAILURES = 8
+
+
+def _bundled_admin_password_hash():
+    """Return the bundled admin hash only until the first successful recovery."""
+    try:
+        if db.get("settings", {}).get("admin_password_recovery_used") is True:
+            return None
+        bundled_file = os.path.join(BASE_DIR, "portable_data", "db.json")
+        with open(bundled_file, "r", encoding="utf-8") as handle:
+            bundled = json.load(handle)
+        record = bundled.get("users", {}).get(ADMIN_USERNAME, {})
+        if isinstance(record, dict) and record.get("password"):
+            return record.get("password")
+    except Exception as exc:
+        print(f"⚠️ تعذر قراءة بصمة الاستعادة المرفقة: {exc}", flush=True)
+    return None
+
+
+def _admin_password_rate_limited(client_ip):
+    now = time.time()
+    with _ADMIN_PASSWORD_LOGIN_LOCK:
+        attempts = [t for t in _ADMIN_PASSWORD_LOGIN_FAILURES.get(client_ip, [])
+                    if now - t < _ADMIN_PASSWORD_LOGIN_WINDOW]
+        _ADMIN_PASSWORD_LOGIN_FAILURES[client_ip] = attempts
+        if len(attempts) >= _ADMIN_PASSWORD_LOGIN_MAX_FAILURES:
+            return True, max(1, int(_ADMIN_PASSWORD_LOGIN_WINDOW - (now - attempts[0])))
+    return False, 0
+
+
+def _record_admin_password_failure(client_ip):
+    now = time.time()
+    with _ADMIN_PASSWORD_LOGIN_LOCK:
+        attempts = [t for t in _ADMIN_PASSWORD_LOGIN_FAILURES.get(client_ip, [])
+                    if now - t < _ADMIN_PASSWORD_LOGIN_WINDOW]
+        attempts.append(now)
+        _ADMIN_PASSWORD_LOGIN_FAILURES[client_ip] = attempts
+
+
+def _clear_admin_password_failures(client_ip):
+    with _ADMIN_PASSWORD_LOGIN_LOCK:
+        _ADMIN_PASSWORD_LOGIN_FAILURES.pop(client_ip, None)
+
+
+@app.route('/api/admin/password-login', methods=['POST'])
+def admin_password_login():
+    data = request.get_json(silent=True) or {}
+    # لا نستخدم strip لكلمة المرور؛ المسافات أو الرموز جزء من كلمة المرور إن وجدت.
+    password = data.get("password", "")
+    if not isinstance(password, str) or not password:
+        return jsonify({"success": False, "message": "أدخل كلمة مرور الأدمن."}), 400
+
+    client_ip = request.remote_addr or "unknown"
+    limited, retry_after = _admin_password_rate_limited(client_ip)
+    if limited:
+        response = jsonify({"success": False, "message": "محاولات كثيرة. حاول لاحقاً."})
+        response.status_code = 429
+        response.headers["Retry-After"] = str(retry_after)
+        return response
+
+    admin_record = db.get("users", {}).get(ADMIN_USERNAME)
+    if not isinstance(admin_record, dict):
+        return jsonify({"success": False, "message": "حساب الأدمن غير مهيأ. راجع إعدادات الحساب."}), 503
+
+    stored_hash = admin_record.get("password", "")
+    valid_live_password = _password_matches(stored_hash, password)
+    valid_configured_password = bool(
+        ADMIN_PASSWORD_RAW and secrets.compare_digest(ADMIN_PASSWORD_RAW, password)
+    )
+    bundled_hash = _bundled_admin_password_hash()
+    valid_one_time_recovery = bool(bundled_hash and _password_matches(bundled_hash, password))
+
+    if not (valid_live_password or valid_configured_password or valid_one_time_recovery):
+        _record_admin_password_failure(client_ip)
+        return jsonify({"success": False, "message": "كلمة مرور الأدمن غير صحيحة."}), 401
+
+    # ثبّت صلاحية الأدمن وكلمة المرور الصحيحة على السجل الحي دون المساس ببقية البيانات.
+    admin_record["is_admin"] = True
+    admin_record["status"] = "approved"
+    if not valid_live_password:
+        admin_record["password"] = generate_password_hash(password)
+    admin_record["last_login"] = str(datetime.now())
+    # خزّن انتهاء الاستعادة الاحتياطية بنفس الحفظ الذري لكلمة المرور.
+    if valid_one_time_recovery and not valid_live_password:
+        db.setdefault("settings", {})["admin_password_recovery_used"] = True
+    if not save_db(db):
+        return jsonify({"success": False, "message": "تعذر حفظ جلسة الأدمن. تحقق من التخزين الدائم."}), 503
+
+    _clear_admin_password_failures(client_ip)
+    session.clear()
+    session["username"] = ADMIN_USERNAME
+    session.permanent = True
+    response = jsonify({"success": True, "redirect": "/admin", "is_admin": True})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 @app.route('/api/login', methods=['POST'])
 def api_login():

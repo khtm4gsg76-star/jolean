@@ -141,6 +141,21 @@ body{
 .strength-bar{height:100%;border-radius:4px;width:0;transition:width .4s,background .4s}
 
 /* الفوتر */
+
+.admin-access-wrap{margin-top:18px;padding-top:16px;border-top:1px solid rgba(0,200,83,.12)}
+.admin-access-trigger{width:100%;padding:11px 14px;border:1px solid rgba(124,58,237,.28);border-radius:12px;background:rgba(124,58,237,.07);color:#c4b5fd;font-family:'Tajawal',sans-serif;font-size:.88rem;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;transition:all .25s}
+.admin-access-trigger:hover{background:rgba(124,58,237,.14);border-color:rgba(124,58,237,.5);box-shadow:0 0 18px rgba(124,58,237,.12)}
+.admin-password-panel{display:none;margin-top:14px;padding:15px;border:1px solid rgba(124,58,237,.22);border-radius:13px;background:rgba(8,5,18,.56)}
+.admin-password-panel.open{display:block;animation:fadeIn .25s ease}
+.admin-password-panel .label{color:rgba(196,181,253,.78)}
+.admin-password-panel .input-wrap{border-color:rgba(124,58,237,.28)}
+.admin-password-panel .input-wrap:focus-within{border-color:rgba(167,139,250,.7);box-shadow:0 0 0 3px rgba(124,58,237,.1)}
+.admin-password-panel .icon{color:#a78bfa}
+.admin-password-panel .inp{direction:ltr;text-align:left;letter-spacing:1px}
+.admin-password-submit{background:linear-gradient(135deg,#6d28d9,#7c3aed,#2563eb);box-shadow:0 8px 22px rgba(124,58,237,.2)}
+.admin-password-submit:hover{box-shadow:0 12px 28px rgba(124,58,237,.3)}
+.admin-note{font-size:.72rem;color:rgba(255,255,255,.35);line-height:1.7;margin:9px 2px 0;text-align:center}
+
 .footer{text-align:center;margin-top:24px;font-size:.72rem;color:rgba(255,255,255,.2);border-top:1px solid rgba(0,200,83,.08);padding-top:18px}
 .dev-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(0,200,83,.07);border:1px solid rgba(0,200,83,.15);border-radius:8px;padding:5px 14px;font-size:.68rem;color:var(--primary);margin-top:10px}
 
@@ -197,6 +212,27 @@ body{
   <button class="btn" id="lBtn" onclick="doLogin()">
     <i class="fas fa-arrow-right-to-bracket"></i> دخول
   </button>
+
+  <div class="admin-access-wrap">
+    <button class="admin-access-trigger" id="adminAccessToggle" type="button" onclick="toggleAdminAccess()" aria-expanded="false" aria-controls="adminPasswordPanel">
+      <i class="fas fa-user-shield"></i> دخول الأدمن
+    </button>
+    <div class="admin-password-panel" id="adminPasswordPanel">
+      <div class="msg" id="adminLoginMsg"></div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label class="label" for="adminOnlyPassword"><i class="fas fa-key"></i> كلمة مرور الأدمن</label>
+        <div class="input-wrap">
+          <div class="icon"><i class="fas fa-lock"></i></div>
+          <input class="inp" id="adminOnlyPassword" type="password" dir="ltr" placeholder="أدخل كلمة مرور الأدمن" autocomplete="current-password" onkeydown="if(event.key==='Enter')doAdminPasswordLogin()">
+          <button class="eye" type="button" onclick="toggleEye('adminOnlyPassword',this)" aria-label="إظهار كلمة المرور"><i class="fas fa-eye"></i></button>
+        </div>
+      </div>
+      <button class="btn admin-password-submit" id="adminPasswordBtn" type="button" onclick="doAdminPasswordLogin()">
+        <i class="fas fa-shield-halved"></i> دخول لوحة الإدارة
+      </button>
+      <div class="admin-note">هذا الدخول مخصص لحساب المسؤول فقط.</div>
+    </div>
+  </div>
 </div>
 
 <!-- فورم التسجيل -->
@@ -304,6 +340,48 @@ async function doLogin(){
     btn.classList.remove('loading');
     btn.innerHTML='<i class="fas fa-arrow-right-to-bracket"></i> دخول';
   }
+}
+
+function toggleAdminAccess(){
+  const panel=document.getElementById('adminPasswordPanel');
+  const toggle=document.getElementById('adminAccessToggle');
+  const opened=!panel.classList.contains('open');
+  panel.classList.toggle('open',opened);
+  toggle.setAttribute('aria-expanded',String(opened));
+  if(opened)document.getElementById('adminOnlyPassword').focus();
+  const msg=document.getElementById('adminLoginMsg');
+  if(msg){msg.className='msg';msg.textContent='';}
+}
+
+async function doAdminPasswordLogin(){
+  const password=document.getElementById('adminOnlyPassword').value;
+  if(!password){showMsg('adminLoginMsg','أدخل كلمة مرور الأدمن','error');return;}
+  const btn=document.getElementById('adminPasswordBtn');
+  btn.classList.add('loading');
+  btn.disabled=true;
+  btn.innerHTML='<i class="fas fa-spinner fa-spin"></i> جارٍ التحقق من صلاحية الأدمن...';
+  try{
+    const response=await fetch('/api/admin/password-login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      cache:'no-store',
+      body:JSON.stringify({password})
+    });
+    const result=await response.json();
+    if(response.ok&&result.success){
+      showMsg('adminLoginMsg','تم التحقق بنجاح. جارٍ فتح لوحة الإدارة...','success');
+      btn.innerHTML='<i class="fas fa-check"></i> تم التحقق';
+      setTimeout(()=>window.location.replace(result.redirect||'/admin'),350);
+      return;
+    }
+    showMsg('adminLoginMsg',result.message||'تعذر تسجيل دخول الأدمن', 'error');
+  }catch(error){
+    showMsg('adminLoginMsg','تعذر الاتصال بالخادم. حاول مرة أخرى.','error');
+  }
+  btn.classList.remove('loading');
+  btn.disabled=false;
+  btn.innerHTML='<i class="fas fa-shield-halved"></i> دخول لوحة الإدارة';
 }
 
 async function doRegister(){
